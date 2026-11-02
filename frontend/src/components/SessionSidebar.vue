@@ -1,6 +1,6 @@
 <template>
   <nav
-    class="bg-[var(--background-nav)] flex flex-col transition-[width,transform] duration-200 h-full border-e border-[var(--border-main)] flex-shrink-0"
+    class="session-sidebar bg-[var(--background-nav)] flex flex-col transition-[width,transform] duration-200 h-full border-e border-[var(--border-main)] flex-shrink-0"
     :style="'width: ' + (isSessionSidebarShow ? 300 : 52) + 'px'">
     <div class="flex flex-col flex-1 min-h-0">
 
