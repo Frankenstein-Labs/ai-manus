@@ -98,8 +98,9 @@ _CONTENT_HTML_SCRIPT = """() => {
 class PlaywrightBrowser:
     """Browser implementation using Playwright connected over CDP."""
 
-    def __init__(self, cdp_url: str):
+    def __init__(self, cdp_url: str, headers: Optional[dict[str, str]] = None):
         self.cdp_url = cdp_url
+        self.headers = headers or {}
         self.playwright = None
         self.browser: Optional[PlaywrightBrowserHandle] = None
         self.page: Optional[Page] = None
@@ -116,7 +117,9 @@ class PlaywrightBrowser:
         for attempt in range(max_retries):
             try:
                 self.playwright = await async_playwright().start()
-                self.browser = await self.playwright.chromium.connect_over_cdp(self.cdp_url)
+                self.browser = await self.playwright.chromium.connect_over_cdp(
+                    self.cdp_url, headers=self.headers
+                )
                 context = (
                     self.browser.contexts[0]
                     if self.browser.contexts

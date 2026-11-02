@@ -2,8 +2,8 @@
   <div
     ref="vncContainer"
     class="vnc-container"
-    style="display: flex; width: 100%; height: 100%; overflow: auto; background: rgb(40, 40, 40);">
-  </div>
+    style="display: flex; width: 100%; height: 100%; overflow: auto; background: rgb(40, 40, 40);"
+  ></div>
 </template>
 
 <script setup lang="ts">
@@ -26,82 +26,98 @@ const emit = defineEmits<{
 
 const vncContainer = ref<HTMLDivElement | null>(null);
 let rfb: RFB | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectDelay = 1000;
+let disposed = false;
 
-const initVNCConnection = async () => {
-  if (!vncContainer.value || !props.enabled) return;
-
-  // Disconnect existing connection
-  if (rfb) {
-    rfb.disconnect();
-    rfb = null;
-  }
-
-  try {
-    const wsUrl = getVNCUrl(props.sessionId);
-
-    // Create NoVNC connection
-    rfb = new RFB(vncContainer.value, wsUrl, {
-      credentials: { password: '' },
-      shared: true,
-      repeaterID: '',
-      wsProtocols: ['binary'],
-      // Scaling options
-      scaleViewport: true,  // Automatically scale to fit container
-      //resizeSession: true   // Request server to adjust resolution
-    });
-
-    // Set viewOnly based on props, default to false (interactive)
-    rfb.viewOnly = props.viewOnly ?? false;
-    rfb.scaleViewport = true;
-    //rfb.resizeSession = true;
-
-    rfb.addEventListener('connect', () => {
-      emit('connected');
-    });
-
-    rfb.addEventListener('disconnect', (e: any) => {
-      emit('disconnected', e);
-    });
-
-    rfb.addEventListener('credentialsrequired', () => {
-      emit('credentialsRequired');
-    });
-  } catch (error) {
-    console.error('Failed to initialize VNC connection:', error);
+const clearReconnect = () => {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
   }
 };
 
 const disconnect = () => {
-  if (rfb) {
-    rfb.disconnect();
-    rfb = null;
+  clearReconnect();
+  const previous = rfb;
+  rfb = null;
+  previous?.disconnect();
+};
+
+const initVNCConnection = async () => {
+  if (!vncContainer.value || !props.enabled || disposed) return;
+  clearReconnect();
+  const previous = rfb;
+  rfb = null;
+  previous?.disconnect();
+
+  try {
+    const connection = new RFB(vncContainer.value, getVNCUrl(props.sessionId), {
+      credentials: { password: '' },
+      shared: true,
+      repeaterID: '',
+      wsProtocols: ['binary'],
+      scaleViewport: true,
+    });
+    rfb = connection;
+    connection.viewOnly = props.viewOnly ?? false;
+    connection.scaleViewport = true;
+
+    connection.addEventListener('connect', () => {
+      if (rfb !== connection) return;
+      reconnectDelay = 1000;
+      emit('connected');
+    });
+
+    connection.addEventListener('disconnect', (event: any) => {
+      if (rfb !== connection) return;
+      emit('disconnected', event);
+      if (!disposed && props.enabled) {
+        const delay = reconnectDelay;
+        reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          void initVNCConnection();
+        }, delay);
+      }
+    });
+
+    connection.addEventListener('credentialsrequired', () => {
+      if (rfb === connection) emit('credentialsRequired');
+    });
+  } catch (error) {
+    console.error('Failed to initialize VNC connection:', error);
+    if (!disposed && props.enabled) {
+      const delay = reconnectDelay;
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        void initVNCConnection();
+      }, delay);
+    }
   }
 };
 
-// Watch for session ID or enabled state changes
 watch([() => props.sessionId, () => props.enabled], () => {
+  reconnectDelay = 1000;
   if (props.enabled && vncContainer.value) {
-    initVNCConnection();
+    void initVNCConnection();
   } else {
     disconnect();
   }
 }, { immediate: true });
 
-// Watch for container availability
 watch(vncContainer, () => {
-  if (vncContainer.value && props.enabled) {
-    initVNCConnection();
-  }
+  if (vncContainer.value && props.enabled) void initVNCConnection();
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
   disconnect();
 });
 
-// Expose methods for parent component
 defineExpose({
   disconnect,
-  initConnection: initVNCConnection
+  initConnection: initVNCConnection,
 });
 </script>
-

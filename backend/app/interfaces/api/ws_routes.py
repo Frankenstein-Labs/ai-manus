@@ -546,7 +546,7 @@ async def vnc_ws(websocket: WebSocket, session_id: str):
 
     try:
         sandbox_ws_url = await agent_service.get_vnc_url(session_id)
-        logger.info("Connecting to sandbox VNC at %s", sandbox_ws_url)
+        logger.info("Connecting to sandbox VNC for session %s", session_id)
 
         async with websockets.connect(sandbox_ws_url) as sandbox_ws:
             async def forward_to_sandbox() -> None:
@@ -577,18 +577,18 @@ async def vnc_ws(websocket: WebSocket, session_id: str):
             )
             for task in pending:
                 task.cancel()
-    except ConnectionError as e:
-        logger.error("Unable to connect to sandbox environment: %s", e)
+    except ConnectionError:
+        logger.error("Unable to connect to sandbox environment for session %s", session_id)
         try:
             await websocket.close(
                 code=1011,
-                reason=f"Unable to connect to sandbox environment: {str(e)}",
+                reason="Unable to connect to sandbox environment",
             )
         except Exception:
             pass
-    except Exception as e:
-        logger.error("VNC WebSocket error: %s", e)
+    except Exception:
+        logger.error("VNC WebSocket error for session %s", session_id)
         try:
-            await websocket.close(code=1011, reason=f"WebSocket error: {str(e)}")
+            await websocket.close(code=1011, reason="WebSocket error")
         except Exception:
             pass

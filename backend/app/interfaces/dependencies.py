@@ -24,7 +24,7 @@ from app.infrastructure.external.session_auth import RedisSessionStore
 # Import all required dependencies for agent service
 from app.domain.external.task import Task
 from app.domain.services.agent_task_runner import AgentTaskRunnerFactory
-from app.infrastructure.external.sandbox.docker_sandbox import DockerSandbox
+from app.infrastructure.external.sandbox.factory import get_sandbox_class
 from app.infrastructure.external.task.redis_task import RedisStreamTask
 from app.infrastructure.repositories.mongo_agent_repository import MongoAgentRepository
 from app.infrastructure.repositories.mongo_session_repository import MongoSessionRepository
@@ -71,7 +71,7 @@ def get_agent_service() -> AgentService:
     # Create all dependencies
     agent_repository = MongoAgentRepository()
     session_repository = MongoSessionRepository()
-    sandbox_cls = DockerSandbox
+    sandbox_cls = get_sandbox_class()
     task_cls = _get_task_cls()
     file_storage = get_file_storage()
     search_engine = get_search_engine()
@@ -305,6 +305,9 @@ async def resolve_ws_user(
     Query ?token= is not accepted.
     """
     settings = get_settings()
+    origin = websocket.headers.get("origin")
+    if origin and origin.rstrip("/") not in settings.allowed_origins:
+        raise UnauthorizedError("WebSocket origin is not allowed")
     if settings.auth_provider == "none":
         return _anonymous_user()
 
@@ -315,6 +318,8 @@ async def resolve_ws_user(
         bearer = auth_header[7:].strip()
 
     cookie_id = websocket.cookies.get(settings.session_cookie_name)
+    if cookie_id and not bearer and not origin:
+        raise UnauthorizedError("WebSocket origin is required for cookie authentication")
     resolved = await service.resolve_credentials(
         bearer_token=bearer,
         cookie_session_id=cookie_id,

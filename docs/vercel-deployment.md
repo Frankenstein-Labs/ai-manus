@@ -1,27 +1,60 @@
-# Vercel 部署（进行中）
+# Déploiement Vercel — guide et état de validation
 
-此分支为前端和 FastAPI 后端添加了 Vercel Services 入口，并通过同一个部署 URL 对外提供服务。Vercel 将 `/api/*` 路由到后端，其余路径路由到 Vue 单页应用。后端现在可以接受服务商提供的 `REDIS_URL`（包括 TLS `rediss://`），同时保留 Docker Compose 所使用的 host/port 配置。
+Le dépôt conserve deux services Vercel : l’interface Vue et l’API FastAPI. `vercel.json` envoie `/api/*` au backend et le reste au frontend. Le fournisseur de sandbox demeure Docker par défaut pour Docker Compose local. Le nouveau fournisseur `SANDBOX_PROVIDER=vercel` sélectionne le SDK officiel Vercel Sandbox et l’adaptateur du dépôt; il nécessite une image Sandbox disponible dans le Vercel Container Registry.
 
-## 重要：暂不可用于生产
+## État : prêt pour des essais contrôlés, pas encore certifié pour la production
 
-这些改动只是迁移的第一步，并非完整的生产部署。智能体运行时目前仍通过宿主机 Docker socket 创建 Docker 容器，而 Vercel Functions 不提供该 socket。在把 Docker sandbox 替换为 Vercel Sandbox、保护 sandbox API/CDP/VNC 访问并完成长任务执行适配和测试之前，不要将此分支作为公开生产实例部署。Vercel Sandbox 端口路由是公开 URL；直接暴露当前未认证的 sandbox 端口是不安全的。
+Le dépôt a maintenant un adaptateur Vercel Sandbox, un relais CDP authentifié sur l’API du sandbox, un accès API sandbox par Bearer token et un accès VNC par token Websockify. Chrome écoute CDP sur loopback; les ports CDP/RFB bruts ne sont plus déclarés dans l’image. Ces changements ont fait l’objet d’une validation de code et des tests/builds indiqués dans le rapport de travail, mais ils ne peuvent pas être considérés comme une intégration Vercel réellement validée sans credentials de projet, image publiée dans Vercel Container Registry et déploiement de prévisualisation.
 
-密码认证也需要在公开上线前完成审查和迁移：现有哈希格式使用单个配置盐值，默认计算强度过低。本分支已停止在应用日志中输出密码哈希，并改用常量时间比较，但尚未迁移已存储的哈希。仅凭这些改动不足以实现生产级认证。该部署配置也没有启用 GitHub OAuth 登录；该功能需要单独实现，并验证回调地址、CSRF/state、防止未经授权的账号关联，并将密钥保存在 Vercel 服务端环境变量中。
+**Ne pas annoncer un déploiement fonctionnel avant d’avoir exécuté le parcours complet dans Vercel.** Il reste à vérifier l’authentification du SDK dans le service backend, la création/reprise/destruction d’un sandbox, la disponibilité des routes publiques exposées, les tunnels WebSocket VNC/CDP à travers Vercel, ainsi que les tâches agent après une reconnexion ou un redémarrage. Vercel Sandbox a une durée d’exécution bornée : un sandbox n’est pas un daemon Docker permanent.
 
-## 项目配置
+Le mode de tâches par défaut `TASK_BACKEND=local` garde les tâches dans la mémoire d’un processus. Il ne fournit pas la reprise inter-instance nécessaire à une API serverless. Une configuration Celery nécessite un worker durable effectivement déployé et testé; le présent `vercel.json` ne le déclare pas. Tant que cette architecture de tâches longues et sa reprise ne sont pas validées, ce dépôt ne doit pas être présenté comme un service agent de production fiable.
 
-将 GitHub 仓库导入 Vercel，并把仓库根目录设为项目根目录。根目录的 `vercel.json` 声明前端和后端容器服务，并通过同一部署路由请求。Vercel 会构建 `frontend/Dockerfile.vercel` 和 `backend/Dockerfile.vercel`。
+L’authentification par mot de passe conserve son format historique de hash avec sel global et faible coût par défaut. Les sessions Redis sont révoquées au changement/réinitialisation du mot de passe, mais aucun migration de hash ni OAuth GitHub n’est fourni. Prévoir une migration des comptes et un audit dédié avant un lancement public.
 
-前端通过同源 `/api/v1` 访问 API，Nginx 提供 SPA 回退。凭据只应保存在 Vercel 服务端环境变量中，不要放入前端 `VITE_*` 变量。
+## Services externes requis
 
-## 必需的服务端环境变量
+- **Vercel Services** : déploiement des conteneurs frontend et backend et routage HTTP/WebSocket.
+- **Vercel Sandbox + Vercel Container Registry** : exécution isolée des sandboxes et image runtime publiée. La configuration d’identité/permissions Vercel doit autoriser le SDK à créer et gérer des sandboxes depuis le service backend.
+- **MongoDB compatible MongoDB** : stockage des utilisateurs, sessions et données applicatives (par exemple MongoDB Atlas).
+- **Redis compatible Redis** : sessions d’authentification, état/évènements et broker si l’architecture de tâches distribuées est retenue (par exemple un fournisseur via Marketplace, avec `rediss://` recommandé lorsque disponible).
+- **Fournisseur LLM** : endpoint OpenAI-compatible ou fournisseur supporté par le projet et sa clé API.
 
-`API_KEY` 是所选 LLM 服务商的 API 密钥。`MONGODB_URI` 应为 MongoDB 连接 URI，`MONGODB_DATABASE` 通常为 `manus`。可以通过 Vercel Marketplace 连接 MongoDB Atlas。`REDIS_URL` 是 Marketplace Redis 服务提供的连接 URI；若服务商提供 TLS URI（`rediss://...`），请优先使用。若未设置该变量，后端仍会使用原有 host/port 配置。
+La présence d’une intégration Marketplace ne signifie pas que la base de données est hébergée par Vercel; les ressources sont opérées par le fournisseur externe.
 
-请设置只属于此环境的强随机 `JWT_SECRET_KEY` 和 `PASSWORD_SALT`，并在 HTTPS 环境下设置 `SESSION_COOKIE_SECURE=true`。公开部署不要设置 `AUTH_PROVIDER=none`。将 GitHub 仓库连接到 Vercel 进行部署，与在产品中提供“使用 GitHub 登录”是两件不同的事。
+## Variables d’environnement backend
 
-## Vercel 限制与外部资源
+Configurer les valeurs comme secrets côté serveur Vercel, jamais comme variables frontend `VITE_*` :
 
-Vercel Services、Vercel Sandbox 与 Marketplace 数据服务相互独立。MongoDB Atlas 和 Redis 虽可通过 Vercel Marketplace 管理，但实际由各自的服务商托管。FastAPI 请求和队列任务受 Vercel Functions 的执行时长限制。智能体任务不能依赖单个无限期 HTTP/WebSocket 请求；上线前需要实现持久化任务状态、断线重连和故障恢复。
+| Variable | Valeur / usage |
+| --- | --- |
+| `APP_ENV` | `production`; active les contrôles de configuration de production. |
+| `API_KEY` | Clé privée du fournisseur LLM (ou clé passée au gateway configuré). |
+| `MONGODB_URI` | URI TLS/connexion de la base MongoDB. |
+| `MONGODB_DATABASE` | Nom de la base, généralement `manus`. |
+| `REDIS_URL` | URI Redis, `rediss://` si TLS est disponible. |
+| `AUTH_PROVIDER` | `password` pour l’authentification par mot de passe; ne pas utiliser `none`. |
+| `JWT_SECRET_KEY` | Secret aléatoire unique d’au moins 32 caractères; le placeholder d’exemple est refusé en production. |
+| `PASSWORD_SALT` | Sel historique requis par le hash actuel; planifier sa migration, ne pas réutiliser entre environnements. |
+| `SESSION_COOKIE_SECURE` | `true` derrière HTTPS. |
+| `CORS_ALLOWED_ORIGINS` | Liste CSV exacte des origines frontales de confiance, par exemple `https://app.example.com`; obligatoire en production. |
+| `SANDBOX_PROVIDER` | `vercel` pour la Sandbox Vercel; omis ou `docker` pour le mode Docker local. |
+| `VERCEL_SANDBOX_IMAGE` | Référence exacte d’une image runtime publiée et accessible dans le Container Registry du projet Vercel. |
+| `SANDBOX_ACCESS_TOKEN` | Secret aléatoire d’au moins 32 caractères injecté dans le sandbox; protège son API/CDP et sert de jeton VNC. |
+| `SANDBOX_TTL_MINUTES` | Durée d’exécution demandée, plafonnée à 45 minutes par l’adaptateur; tester le comportement après expiration. |
+| `BROWSER_ENGINE` | Facultatif : `browser_use` ou `playwright`. |
+| `TASK_BACKEND` | `local` par défaut; `celery` seulement si un broker et un worker durable séparé sont déployés et validés. |
 
-官方参考：[Vercel Services](https://vercel.com/kb/guide/vercel-services)、[Vercel FastAPI](https://vercel.com/docs/frameworks/backend/fastapi)、[Vercel Docker](https://vercel.com/kb/guide/docker)、[Vercel Sandbox 安全说明](https://vercel.com/docs/sandbox/concepts)、[Vercel Sandbox Python SDK](https://vercel.com/docs/sandbox/python-sdk-reference)、[Vercel Redis](https://vercel.com/docs/redis)、[Vercel Functions 限制](https://vercel.com/docs/functions/limitations)。
+Selon la configuration du projet Vercel et du SDK, l’identité d’exécution doit aussi fournir les credentials/OIDC nécessaires à Vercel Sandbox. Ne pas remplacer ce contrôle d’accès par un token écrit dans le frontend.
+
+## Vérifications nécessaires avant mise en production
+
+1. Construire les images `backend/Dockerfile.vercel`, `frontend/Dockerfile.vercel` et l’image runtime sous `sandbox/`, avec les fichiers `uv.lock` correspondants.
+2. Depuis une Preview Vercel, confirmer le démarrage de l’API et du frontend, puis vérifier `/api/v1/config/frontend` et les probes de santé disponibles.
+3. Créer une session et une tâche agent; confirmer que le sandbox démarre, exécute des commandes et fichiers, charge Chrome, puis qu’il est détruit à la fin.
+4. Vérifier qu’une requête sans Bearer est refusée sur les routes sandbox et CDP; vérifier le refus du jeton incorrect sur VNC; tester les handshakes WebSocket d’origines étrangères sur chat, sessions et VNC.
+5. Maintenir un viewer VNC, tester les outils navigateur/CDP, interrompre le réseau, vérifier la reconnexion VNC et le rattrapage des évènements chat après reconnexion.
+6. Laisser une tâche dépasser la durée autorisée d’une Function et une durée de vie Sandbox; vérifier son état, son annulation et sa reprise depuis un autre processus.
+7. Déployer un worker Celery durable ou adopter un service de tâches durable testé avant d’ouvrir le service à des utilisateurs.
+
+`docker` n’est pas requis dans un Vercel Function : l’adaptateur passe par le SDK Vercel Sandbox. Il reste requis en développement local pour le fournisseur Docker. Un build de conteneur ou un test unitaire local ne remplace pas les essais Preview qui nécessitent les credentials et ressources Vercel réels.

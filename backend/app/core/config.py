@@ -22,6 +22,8 @@ def _parse_extra_headers() -> dict | None:
 
 
 class Settings(BaseSettings):
+    app_env: str = "development"
+    cors_allowed_origins: str = ""
     
     # Model provider configuration
     api_key: str | None = None
@@ -61,6 +63,9 @@ class Settings(BaseSettings):
     sandbox_https_proxy: str | None = None
     sandbox_http_proxy: str | None = None
     sandbox_no_proxy: str | None = None
+    sandbox_provider: str = "docker"  # "docker" or "vercel"
+    vercel_sandbox_image: str | None = None
+    sandbox_access_token: str | None = None
 
     # Browser engine configuration
     browser_engine: str = "browser_use"  # "browser_use" or "playwright"
@@ -149,6 +154,27 @@ class Settings(BaseSettings):
         """Validate configuration settings"""
         if not self.api_key:
             raise ValueError("API key is required")
+        if self.app_env.lower() == "production" or os.getenv("VERCEL") == "1":
+            if self.jwt_secret_key == "your-secret-key-here" or len(self.jwt_secret_key) < 32:
+                raise ValueError("JWT_SECRET_KEY must be a unique secret of at least 32 characters in production")
+            if not self.session_cookie_secure:
+                raise ValueError("SESSION_COOKIE_SECURE must be true in production")
+            if not self.cors_allowed_origins.strip():
+                raise ValueError("CORS_ALLOWED_ORIGINS must list trusted frontend origins in production")
+            if self.auth_provider == "none":
+                raise ValueError("AUTH_PROVIDER=none is not allowed in production")
+        if self.sandbox_provider.lower() == "vercel":
+            if not self.vercel_sandbox_image:
+                raise ValueError("VERCEL_SANDBOX_IMAGE is required when SANDBOX_PROVIDER=vercel")
+            if not self.sandbox_access_token or len(self.sandbox_access_token) < 32:
+                raise ValueError("SANDBOX_ACCESS_TOKEN must be a random secret of at least 32 characters")
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        configured = [origin.strip().rstrip("/") for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+        if configured:
+            return configured
+        return ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"]
 
 @lru_cache()
 def get_settings() -> Settings:

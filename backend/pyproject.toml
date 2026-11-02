@@ -37,6 +37,7 @@ dependencies = [
     "tavily-python>=0.5.0",
     "uvicorn>=0.38.0",
     "websockets>=15.0.1",
+    "vercel>=0.12.1",
 ]
 
 [dependency-groups]
