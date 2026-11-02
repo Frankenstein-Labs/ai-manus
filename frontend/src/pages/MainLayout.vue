@@ -1,7 +1,7 @@
 <template>
-  <div class="h-screen flex overflow-hidden bg-white">
+  <div class="main-shell flex h-[100dvh] min-h-0 overflow-hidden bg-white">
     <SessionSidebar />
-    <div class="flex-1 min-w-0 h-full py-0 pr-0 relative">
+    <div class="main-content flex-1 min-w-0 min-h-0 h-full py-0 pr-0 relative">
       <div class="flex h-full bg-[var(--background-gray-main)]">
         <div class="flex flex-1 min-w-0 min-h-0">
           <router-view />

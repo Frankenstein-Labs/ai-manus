@@ -151,7 +151,7 @@
       </div>
 
       <!-- Official message column (CDP session detail): px-[24px] sm:max-w-[810px] sm:min-w-[360px] -->
-      <div class="mx-auto w-full max-w-full px-[24px] sm:max-w-[810px] sm:min-w-[360px] flex flex-col flex-1">
+      <div class="chat-message-column mx-auto w-full max-w-[810px] px-3 sm:px-5 lg:px-6 flex flex-col flex-1 min-h-0">
         <div class="flex flex-col w-full gap-[12px] pb-[80px] pt-[12px] flex-1 overflow-y-auto">
           <ChatMessage v-for="(message, index) in messages" :key="index" :message="message"
             :hideHeader="isConsecutiveAssistant(messages, index)"

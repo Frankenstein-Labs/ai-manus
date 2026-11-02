@@ -1,7 +1,7 @@
 <template>
   <SimpleBar>
     <div
-      class="flex flex-col h-full flex-1 min-w-0 mx-auto w-full sm:min-w-[390px] px-5 justify-center items-start gap-2 relative max-w-full sm:max-w-full">
+      class="flex flex-col h-full min-h-0 flex-1 min-w-0 mx-auto w-full px-3 sm:px-5 justify-center items-start gap-2 relative max-w-full">
       <!-- Top header — same Manus / Agent·Lite switcher chrome as ChatPage -->
       <div class="w-[calc(100%+40px)] -mx-5 bg-[var(--background-gray-main)] sticky top-0 z-10 ps-[14px] pe-[20px] py-[12px] border-b border-transparent">
         <div class="flex justify-between items-center w-full">
