@@ -85,10 +85,10 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy project files (copy dependency files first to leverage cache)
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 
 # Install Python dependencies
-RUN uv sync --no-dev
+RUN uv sync --locked --no-dev
 
 # Copy remaining project files
 COPY . .
@@ -100,7 +100,7 @@ RUN chown -R ubuntu:ubuntu /app
 COPY supervisord.conf /etc/supervisor/conf.d/app.conf
 
 # Expose ports
-EXPOSE 8080 9222 5900 5901
+EXPOSE 8080 5901
 
 ENV UVI_ARGS=""
 ENV CHROME_ARGS=""

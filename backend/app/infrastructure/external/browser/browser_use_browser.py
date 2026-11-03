@@ -33,6 +33,7 @@ from browser_use.browser.events import (
     TypeTextEvent,
 )
 from browser_use.browser.session import BrowserSession, CDPSession
+from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.dom.markdown_extractor import extract_clean_markdown
 
@@ -55,8 +56,9 @@ class BrowserUseBrowser:
     domain ``Browser`` protocol.
     """
 
-    def __init__(self, cdp_url: str):
+    def __init__(self, cdp_url: str, headers: Optional[dict[str, str]] = None):
         self.cdp_url = cdp_url
+        self.headers = headers or {}
         self._session: Optional[BrowserSession] = None
         self._console_logs: deque[str] = deque(maxlen=MAX_CONSOLE_LOG_ENTRIES)
         self._console_clients: set[int] = set()
@@ -79,6 +81,7 @@ class BrowserUseBrowser:
             try:
                 session = BrowserSession(
                     cdp_url=self.cdp_url,
+                    browser_profile=BrowserProfile(headers=self.headers),
                     minimum_wait_page_load_time=0.5,
                     wait_for_network_idle_page_load_time=2.0,
                     highlight_elements=False,

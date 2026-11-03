@@ -390,6 +390,7 @@ class AuthService:
         user.password_hash = self._hash_password(new_password)
         user.updated_at = datetime.utcnow()
         await self.user_repository.update_user(user)
+        await self.session_store.delete_all_for_user(user_id)
         logger.info(f"Password changed successfully for user: {user_id}")
         return True
 
@@ -445,5 +446,6 @@ class AuthService:
         user.password_hash = self._hash_password(new_password)
         user.updated_at = datetime.utcnow()
         await self.user_repository.update_user(user)
+        await self.session_store.delete_all_for_user(user.id)
         logger.info(f"Password reset successfully for user: {email}")
         return True

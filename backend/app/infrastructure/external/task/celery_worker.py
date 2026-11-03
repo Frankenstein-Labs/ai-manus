@@ -42,7 +42,7 @@ def _get_loop() -> asyncio.AbstractEventLoop:
 def _build_runner_factory():
     """Composition root for the worker process (mirrors interfaces/dependencies.py)."""
     from app.domain.services.agent_task_runner import AgentTaskRunnerFactory
-    from app.infrastructure.external.sandbox.docker_sandbox import DockerSandbox
+    from app.infrastructure.external.sandbox.factory import get_sandbox_class
     from app.infrastructure.external.file.gridfsfile import get_file_storage
     from app.infrastructure.external.search import get_search_engine
     from app.infrastructure.external.llm import get_llm
@@ -67,7 +67,7 @@ def _build_runner_factory():
     return AgentTaskRunnerFactory(
         agent_repository=MongoAgentRepository(),
         session_repository=MongoSessionRepository(),
-        sandbox_cls=DockerSandbox,
+        sandbox_cls=get_sandbox_class(),
         file_storage=file_storage,
         mcp_repository=FileMCPRepository(),
         llm=get_llm(),

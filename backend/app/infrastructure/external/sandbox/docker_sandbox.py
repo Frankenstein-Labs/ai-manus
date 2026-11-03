@@ -6,6 +6,8 @@ import socket
 import logging
 import asyncio
 import io
+import secrets
+from urllib.parse import quote
 from async_lru import alru_cache
 from app.core.config import get_settings
 from app.domain.models.tool_result import ToolResult
@@ -21,13 +23,16 @@ _UNSET = object()
 
 
 class DockerSandbox(Sandbox):
-    def __init__(self, ip: str = None, container_name: str = None):
+    def __init__(self, ip: str = None, container_name: str = None, access_token: str | None = None):
         """Initialize Docker sandbox and API interaction client"""
-        self.client = httpx.AsyncClient(timeout=600)
+        self.access_token = access_token
+        headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
+        self.client = httpx.AsyncClient(timeout=600, headers=headers)
         self.ip = ip
         self.base_url = f"http://{self.ip}:8080"
-        self._vnc_url = f"ws://{self.ip}:5901"
-        self._cdp_url = f"http://{self.ip}:9222"
+        vnc_query = f"?token={quote(access_token)}" if access_token else ""
+        self._vnc_url = f"ws://{self.ip}:5901/{vnc_query}"
+        self._cdp_url = f"{self.base_url}/api/v1/cdp"
         self._container_name = container_name
     
     @property
@@ -92,6 +97,7 @@ class DockerSandbox(Sandbox):
         image = settings.sandbox_image
         name_prefix = settings.sandbox_name_prefix
         container_name = f"{name_prefix}-{str(uuid.uuid4())[:8]}"
+        access_token = secrets.token_urlsafe(32)
         
         try:
             # Create Docker client
@@ -104,11 +110,12 @@ class DockerSandbox(Sandbox):
                 "detach": True,
                 "remove": True,
                 "environment": {
-                    "SERVICE_TIMEOUT_MINUTES": settings.sandbox_ttl_minutes,
-                    "CHROME_ARGS": settings.sandbox_chrome_args,
-                    "HTTPS_PROXY": settings.sandbox_https_proxy,
-                    "HTTP_PROXY": settings.sandbox_http_proxy,
-                    "NO_PROXY": settings.sandbox_no_proxy
+                    "SERVICE_TIMEOUT_MINUTES": str(settings.sandbox_ttl_minutes or 30),
+                    "CHROME_ARGS": settings.sandbox_chrome_args or "",
+                    "HTTPS_PROXY": settings.sandbox_https_proxy or "",
+                    "HTTP_PROXY": settings.sandbox_http_proxy or "",
+                    "NO_PROXY": settings.sandbox_no_proxy or "",
+                    "SANDBOX_ACCESS_TOKEN": access_token,
                 }
             }
             
@@ -126,7 +133,8 @@ class DockerSandbox(Sandbox):
             # Create and return DockerSandbox instance
             return DockerSandbox(
                 ip=ip_address,
-                container_name=container_name
+                container_name=container_name,
+                access_token=access_token,
             )
             
         except Exception as e:
@@ -488,9 +496,9 @@ class DockerSandbox(Sandbox):
         try:
             if self.client:
                 await self.client.aclose()
-            if self.container_name:
+            if self._container_name:
                 docker_client = docker.from_env()
-                docker_client.containers.get(self.container_name).remove(force=True)
+                docker_client.containers.get(self._container_name).remove(force=True)
             return True
         except Exception as e:
             logger.error(f"Failed to destroy Docker sandbox: {str(e)}")
@@ -509,9 +517,11 @@ class DockerSandbox(Sandbox):
         engine = (settings.browser_engine or "browser_use").lower().strip()
         if engine == "playwright":
             logger.info("Using PlaywrightBrowser engine for CDP URL: %s", self.cdp_url)
-            return PlaywrightBrowser(self.cdp_url)
+            headers = {"Authorization": f"Bearer {self.access_token}"} if self.access_token else {}
+            return PlaywrightBrowser(self.cdp_url, headers=headers)
         logger.info("Using BrowserUseBrowser engine for CDP URL: %s", self.cdp_url)
-        return BrowserUseBrowser(self.cdp_url)
+        headers = {"Authorization": f"Bearer {self.access_token}"} if self.access_token else {}
+        return BrowserUseBrowser(self.cdp_url, headers=headers)
 
     @staticmethod
     @alru_cache(maxsize=128, typed=True)
@@ -561,7 +571,7 @@ class DockerSandbox(Sandbox):
         if settings.sandbox_address:
             # Chrome CDP needs IP address
             ip = await cls._resolve_hostname_to_ip(settings.sandbox_address)
-            return DockerSandbox(ip=ip)
+            return DockerSandbox(ip=ip, access_token=settings.sandbox_access_token)
     
         return await asyncio.to_thread(DockerSandbox._create_task)
     
@@ -579,7 +589,7 @@ class DockerSandbox(Sandbox):
         settings = get_settings()
         if settings.sandbox_address:
             ip = await cls._resolve_hostname_to_ip(settings.sandbox_address)
-            return DockerSandbox(ip=ip, container_name=id)
+            return DockerSandbox(ip=ip, container_name=id, access_token=settings.sandbox_access_token)
 
         docker_client = docker.from_env()
         container = docker_client.containers.get(id)
@@ -587,4 +597,6 @@ class DockerSandbox(Sandbox):
         
         ip_address = cls._get_container_ip(container)
         logger.info(f"IP address: {ip_address}")
-        return DockerSandbox(ip=ip_address, container_name=id)
+        env = container.attrs.get("Config", {}).get("Env", [])
+        access_token = next((item.split("=", 1)[1] for item in env if item.startswith("SANDBOX_ACCESS_TOKEN=")), None)
+        return DockerSandbox(ip=ip_address, container_name=id, access_token=access_token)

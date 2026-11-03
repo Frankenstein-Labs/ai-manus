@@ -62,12 +62,6 @@ async def lifespan(app: FastAPI):
     finally:
         # Code executed on shutdown
         logger.info("Application shutdown - Manus AI Agent terminating")
-        # Disconnect from MongoDB
-        await get_mongodb().shutdown()
-        # Disconnect from Redis
-        await get_redis().shutdown()
-
-
         logger.info("Cleaning up AgentService instance")
         try:
             await asyncio.wait_for(get_agent_service().shutdown(), timeout=30.0)
@@ -76,13 +70,16 @@ async def lifespan(app: FastAPI):
             logger.warning("AgentService shutdown timed out after 30 seconds")
         except Exception as e:
             logger.error(f"Error during AgentService cleanup: {str(e)}")
+        # Keep task dependencies alive until task cleanup has completed.
+        await get_redis().shutdown()
+        await get_mongodb().shutdown()
 
 app = FastAPI(title="Manus AI Agent", lifespan=lifespan)
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
